@@ -23,7 +23,7 @@ import textwrap
 from contextlib import asynccontextmanager
 from typing import Any
 
-VERSION = "1.0"
+VERSION = "0.2.0"
 
 # The SDK is imported lazily-ish: a missing dependency must not stop --help from
 # working, so the failure is recorded and raised only when we try to connect.

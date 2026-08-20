@@ -1,4 +1,4 @@
-# MCPtest
+# MCP Client
 
 A single-file CLI for poking at MCP servers: connect, list what the server
 exposes, call a tool with arbitrary arguments, and run a file of assertions as a
@@ -7,7 +7,7 @@ wiring it into an agent, and to isolate whether a broken tool call is the
 server's fault or the client's.
 
 ```
-mcptest.py [transport] [global options] <command> [command options]
+mcp-client.py [transport] [global options] <command> [command options]
 ```
 
 Built on the MCP Python SDK v2, so it speaks the `2026-07-28` protocol and falls
@@ -17,7 +17,7 @@ back to the `initialize` handshake against older servers without you asking.
 
 ```bash
 pip install -r requirements.txt
-chmod +x mcptest.py
+chmod +x mcp-client.py
 ```
 
 Python 3.10+. The dependency is the official `mcp` SDK, v2 or newer.
@@ -81,7 +81,7 @@ really does serve both eras.
 ### `info` — is it alive?
 
 ```bash
-./mcptest.py --http http://10.0.4.10:5000/mcp info
+./mcp-client.py --http http://10.0.4.10:5000/mcp info
 ```
 
 Connects and prints the negotiated protocol version, the server's name and
@@ -94,8 +94,8 @@ way to distinguish "server is down / URL is wrong / auth is rejected" from
 ### `list` — what can it do?
 
 ```bash
-./mcptest.py --stdio "npx -y @modelcontextprotocol/server-filesystem /tmp" list
-./mcptest.py --config .mcp.json --server kali list --schema --resources --prompts
+./mcp-client.py --stdio "npx -y @modelcontextprotocol/server-filesystem /tmp" list
+./mcp-client.py --config .mcp.json --server kali list --schema --resources --prompts
 ```
 
 Prints each tool as `name(arg:type, optional?:type)`, its title if it has one,
@@ -110,7 +110,7 @@ the usual cause of a model calling a tool wrong.
 ### `describe` — what does this call need?
 
 ```bash
-./mcptest.py --config .mcp.json --server kali describe run_command
+./mcp-client.py --config .mcp.json --server kali describe run_command
 ```
 
 ```
@@ -150,13 +150,13 @@ Three ways to pass arguments, checked in this order:
 
 ```bash
 # full JSON object — use for nested structures
-./mcptest.py --config .mcp.json --server fs call read_file --args '{"path":"/tmp/a.log"}'
+./mcp-client.py --config .mcp.json --server fs call read_file --args '{"path":"/tmp/a.log"}'
 
 # from a file
-./mcptest.py --config .mcp.json --server fs call write_file --args-file payload.json
+./mcp-client.py --config .mcp.json --server fs call write_file --args-file payload.json
 
 # repeated key=value — values are parsed as JSON when possible, else kept as strings
-./mcptest.py --config .mcp.json --server kali call run_command -a cmd="nmap -sV 10.0.4.1" -a timeout=120
+./mcp-client.py --config .mcp.json --server kali call run_command -a cmd="nmap -sV 10.0.4.1" -a timeout=120
 ```
 
 Before sending, `call` fetches `tools/list` and checks the payload: an unknown
@@ -175,7 +175,7 @@ schema, is printed separately — that's the half your code should read, where
 ### `suite` — regression testing
 
 ```bash
-./mcptest.py --config .mcp.json --server kali suite cases.json
+./mcp-client.py --config .mcp.json --server kali suite cases.json
 ```
 
 `cases.json` is a list of assertions:
