@@ -191,20 +191,38 @@ def render(content: list) -> str:
     return "\n".join(out)
 
 
+ARGS_HINT = """hint: -a takes one KEY=VALUE and repeats; --args takes one JSON object:
+  ... call TOOL -a a=1 -a b=3
+  ... call TOOL --args '{"a": 1, "b": 3}'"""
+
+
+def decode_object(text: str, source: str) -> dict[str, Any]:
+    """Decode a JSON object, naming the flag that carried it when it isn't one."""
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{source} is not valid JSON: {exc}\n{ARGS_HINT}")
+    if not isinstance(value, dict):
+        raise SystemExit(
+            f"{source} must be a JSON object, got {type(value).__name__}\n{ARGS_HINT}")
+    return value
+
+
 def parse_args_payload(args) -> dict[str, Any]:
     """--args JSON wins, then --args-file, then repeated -a key=value."""
     if args.args:
-        return json.loads(args.args)
-    if args.args_file:
+        payload = decode_object(args.args, "--args")
+    elif args.args_file:
         with open(args.args_file) as fh:
-            return json.load(fh)
-    payload: dict[str, Any] = {}
-    for item in args.arg or []:
-        key, _, raw = item.partition("=")
-        try:
-            payload[key] = json.loads(raw)  # numbers, bools, lists, objects
-        except json.JSONDecodeError:
-            payload[key] = raw  # plain string
+            payload = decode_object(fh.read(), f"--args-file {args.args_file}")
+    else:
+        payload = {}
+        for item in args.arg or []:
+            key, _, raw = item.partition("=")
+            try:
+                payload[key] = json.loads(raw)  # numbers, bools, lists, objects
+            except json.JSONDecodeError:
+                payload[key] = raw  # plain string
     return payload
 
 
@@ -723,6 +741,34 @@ async def main_async(args) -> int:
         return await handler(Session(client, args.timeout), args)
 
 
+def leaf_errors(exc: BaseException) -> list[BaseException]:
+    """Flatten anyio's nested ExceptionGroups down to the real causes.
+
+    Every request runs inside the SDK's task groups, so anything raised while a
+    session is open comes back wrapped — usually twice. Reporting the wrapper
+    ("unhandled errors in a TaskGroup") reports nothing at all.
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        return [leaf for sub in exc.exceptions for leaf in leaf_errors(sub)]
+    return [exc]
+
+
+def report(errors: list[BaseException], timeout: float) -> int:
+    """Print every real cause behind a failed run and pick an exit code."""
+    if any(isinstance(exc, KeyboardInterrupt) for exc in errors):
+        return 130
+    for exc in errors:
+        if isinstance(exc, SystemExit):
+            print(f"error: {exc}", file=sys.stderr)
+        elif isinstance(exc, asyncio.TimeoutError):
+            print(f"error: no answer within {timeout}s", file=sys.stderr)
+        elif isinstance(exc, MCPError):
+            print(f"error: protocol error: {exc}", file=sys.stderr)
+        else:
+            print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
+    return 2
+
+
 def main() -> int:
     args = build_parser().parse_args()
     if SDK_ERROR is not None:
@@ -737,17 +783,8 @@ def main() -> int:
 
     try:
         return asyncio.run(main_async(args))
-    except KeyboardInterrupt:
-        return 130
-    except asyncio.TimeoutError:
-        print(f"error: no answer within {args.timeout}s", file=sys.stderr)
-        return 2
-    except MCPError as exc:
-        print(f"error: protocol error: {exc}", file=sys.stderr)
-        return 2
-    except Exception as exc:
-        print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 2
+    except BaseException as exc:  # re-reported by report(), never swallowed
+        return report(leaf_errors(exc), args.timeout)
 
 
 if __name__ == "__main__":
