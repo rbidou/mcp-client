@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import difflib
+import inspect
 import json
 import os
 import shlex
@@ -337,7 +338,7 @@ def describe_arguments(tool, prog: str = "mcptest ...") -> str:
         lines.append(f"  {tool.title}")
     if tool.description:
         lines.append("")
-        lines += ["  " + ln for ln in tool.description.strip().splitlines()]
+        lines += description_lines(tool.description)
 
     if not rows:
         lines += ["", "takes no arguments"]
@@ -381,6 +382,12 @@ def describe_arguments(tool, prog: str = "mcptest ...") -> str:
                       f"{n}:{type_name(p)}" for n, p, _ in walk_properties(out_schema)
                       if "." not in n) or "  (see --schema)"]
     return "\n".join(lines)
+
+
+def description_lines(text: str, indent: str = "  ") -> list[str]:
+    """Indent a tool description, stripping the docstring indentation it ships with."""
+    return [f"{indent}{line}" if line else ""
+            for line in inspect.cleandoc(text).splitlines()]
 
 
 def missing_required(schema: dict | None, payload: dict) -> list[str]:
@@ -442,7 +449,7 @@ async def cmd_list(session: Session, args) -> int:
         label = f" — {tool.title}" if tool.title else ""
         print(f"\n\033[1m{tool.name}\033[0m({signature(tool.input_schema)}){label}")
         if tool.description:
-            print("  " + tool.description.strip().splitlines()[0])
+            print("\n".join(description_lines(tool.description)))
         if args.schema:
             print(json.dumps(tool.input_schema, indent=2))
         if args.schema and getattr(tool, "output_schema", None):
@@ -464,7 +471,9 @@ async def cmd_list(session: Session, args) -> int:
         print(f"\nprompts ({len(prompts.prompts)}):")
         for p in prompts.prompts:
             needs = ", ".join(a.name for a in (p.arguments or []))
-            print(f"  {p.name}({needs})  {p.description or ''}")
+            print(f"  {p.name}({needs})")
+            if p.description:
+                print("\n".join(description_lines(p.description, "    ")))
     return 0
 
 
